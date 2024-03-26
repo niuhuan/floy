@@ -1,0 +1,30 @@
+name: floy
+description: "A fuliba app client."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.1 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.6
+  rust_lib_floy:
+    path: rust_builder
+  flutter_rust_bridge: 2.0.0-dev.28
+  url_launcher: ^6.2.5
+  pull_to_refresh: ^2.0.0
+  flutter_html: ^3.0.0-beta.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^3.0.0
+  integration_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
