@@ -109,6 +109,8 @@ jobs:
 
       - id: check_asset
         name: Check asset
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd ci
           cargo run --release check-asset ${{ matrix.config.target }} ${{ matrix.config.arch }}
