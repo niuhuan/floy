@@ -16,7 +16,7 @@ async fn main() {
     }
     match args[1].as_str() {
         "check-release" => check_release().await,
-        "check-assets" => check_assets(&args).await,
+        "check-asset" => check_asset(&args).await,
         "upload-asset" => upload_asset(&args).await,
         not_match => panic!("Unknown command: {}", not_match),
     };
@@ -106,7 +106,7 @@ async fn check_release() {
     }
 }
 
-async fn check_assets(args: &Vec<String>) {
+async fn check_asset(args: &Vec<String>) {
     if args.len() < 4 {
         panic!("Please provide a release platform and arch");
     }
