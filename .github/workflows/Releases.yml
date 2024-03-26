@@ -1,0 +1,230 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+env:
+  LLVM_VERSION: '10.0'
+  RUST_TOOLCHAIN: nightly-2024-03-08
+  NDK_VERSION: 25.2.9519653
+  FLUTTER_VERSION: '3.19.3'
+  FLUTTER_CHANNEL: 'stable'
+
+jobs:
+
+  ci-pass:
+    name: CI is green
+    runs-on: ubuntu-latest
+    needs:
+      - check_release
+      - build_release_assets
+    steps:
+      - run: exit 0
+
+  check_release:
+    name: Check release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cargo cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-
+
+      - name: Install rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          override: true
+
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          repository: ${{ github.event.inputs.repo }}
+
+      - name: Cargo ci build cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ci/target/
+          key: ${{ runner.os }}-cargo-ci_target
+
+      - name: Check release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd ci
+          cargo run --release -- check-release
+
+  build_release_assets:
+    name: Build release assets
+    needs:
+      - check_release
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - target: ios
+            host: macos-latest
+            arch: aarch64
+          - target: android
+            host: ubuntu-latest
+            arch: arm
+
+    runs-on: ${{ matrix.config.host }}
+
+    env:
+      TARGET: ${{ matrix.config.target }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Cargo cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-
+
+      - name: Install rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          override: true
+
+      - name: Cargo ci build cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ci/target/
+          key: ${{ runner.os }}-cargo-ci_target
+
+      - id: check_asset
+        name: Check asset
+        run: |
+          cd ci
+          cargo run --release check-asset ${{ matrix.config.target }} ${{ matrix.config.arch }}
+
+      - name: Cache Flutter dependencies (Android)
+        if: steps.check_asset.outputs.skip_build != 'true' && matrix.config.target == 'android'
+        uses: actions/cache@v3
+        with:
+          path: /opt/hostedtoolcache/flutter
+          key: ${{ runner.os }}-flutter
+
+      - name: Setup flutter
+        if: steps.check_asset.outputs.skip_build != 'true'
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          architecture: x64
+
+      - name: Install LLVM and Clang (Android)
+        if: steps.check_asset.outputs.skip_build != 'true' && matrix.config.target == 'android'
+        run: |
+          sudo apt update
+          sudo apt install -y libclang-dev
+
+      - name: Install cargo tools (non-android)
+        if: steps.check_asset.outputs.skip_build != 'true' && matrix.config.target != 'android'
+        run: |
+          cargo install cbindgen
+
+      - name: Install cargo tools (Android)
+        if: steps.check_asset.outputs.skip_build != 'true' && matrix.config.target == 'android'
+        run: |
+          cargo install cargo-ndk
+
+      - name: Setup java (Android)
+        if: steps.check_asset.outputs.skip_build != 'true' && matrix.config.target == 'android'
+        uses: actions/setup-java@v3
+        with:
+          java-version: 11
+          distribution: 'zulu'
+
+      - name: Setup android tools (Android)
+        if: steps.check_asset.outputs.skip_build != 'true' && matrix.config.target == 'android'
+        uses: maxim-lobanov/setup-android-tools@v1
+        with:
+          packages: |
+            platform-tools
+            platforms;android-33
+            build-tools;33.0.0
+            ndk;${{ env.NDK_VERSION }}
+
+      - name: Set-Version (All)
+        if: steps.check_asset.outputs.skip_build != 'true'
+        run: |
+          cd ci
+          cp version.code.txt ../lib/assets/version.txt
+
+      - name: Cargo native build cache
+        if: steps.check_asset.outputs.skip_build != 'true'
+        uses: actions/cache@v3
+        with:
+          path: |
+            native/target/
+          key: ${{ runner.os }}-cargo-native_target-${{ matrix.config.target }}
+
+      - name: Install rust target and build (ios)
+        if: steps.check_asset.outputs.skip_build != 'true' && ( matrix.config.target == 'ios')
+        run: |
+          rustup target install aarch64-apple-ios
+          flutter build ios --no-simulator --no-codesign --release
+          cd build
+          rm -rf Payload
+          mkdir Payload
+          mv ios/iphoneos/Runner.app Payload/
+          sh ../ci/scripts/thin-payload.sh Payload
+          zip -r -9 nosign.ipa Payload
+          cd ..
+
+      - name: Install rust target and build (Android)
+        if: steps.check_asset.outputs.skip_build != 'true' && ( matrix.config.target == 'android') && ( matrix.config.arch == 'arm64')
+        run: |
+          export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ env.NDK_VERSION }}
+          rustup target install aarch64-linux-android
+          flutter build apk --target-platform android-arm64
+
+      - name: Install rust target and build (Android)
+        if: steps.check_asset.outputs.skip_build != 'true' && ( matrix.config.target == 'android') && ( matrix.config.arch == 'arm')
+        run: |
+          export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ env.NDK_VERSION }}
+          rustup target install armv7-linux-androideabi
+          flutter build apk --target-platform android-arm
+          cd ..
+
+      - name: Sign APK (Android)
+        if: steps.check_asset.outputs.skip_build != 'true' && ( matrix.config.target == 'android-arm32' || matrix.config.target == 'android-arm64' || matrix.config.target == 'android-x86_64' )
+        env:
+          ANDROID_JKS_BASE64: ${{ secrets.ANDROID_JKS_BASE64 }}
+          ANDROID_JKS_PASSWORD: ${{ secrets.ANDROID_JKS_PASSWORD }}
+        run: |
+          echo $ANDROID_JKS_BASE64 > key.jks.base64
+          base64 -d key.jks.base64 > key.jks
+          echo $ANDROID_JKS_PASSWORD | $ANDROID_HOME/build-tools/30.0.2/apksigner sign --ks key.jks build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Cargo ci build cache
+        if: steps.check_asset.outputs.skip_build != 'true'
+        uses: actions/cache@v3
+        with:
+          path: |
+            ci/target/
+          key: ${{ runner.os }}-cargo-ci_target
+
+      - name: Upload Asset (All)
+        if: steps.check_asset.outputs.skip_build != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd ci
+          cargo run --release upload-asset ${{ matrix.config.target }} ${{ matrix.config.arch }}
