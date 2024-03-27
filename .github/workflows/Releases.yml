@@ -153,8 +153,8 @@ jobs:
         if: steps.check_asset.outputs.skip_build != 'true' && matrix.config.target == 'android'
         uses: actions/setup-java@v3
         with:
-          java-version: 11
-          distribution: 'zulu'
+          java-version: '17'
+          distribution: 'temurin'
 
       - name: Setup android tools (Android)
         if: steps.check_asset.outputs.skip_build != 'true' && matrix.config.target == 'android'
