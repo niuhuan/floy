@@ -6,7 +6,6 @@ on:
 env:
   LLVM_VERSION: '10.0'
   RUST_TOOLCHAIN: nightly-2024-03-08
-  NDK_VERSION: 25.2.9519653
   FLUTTER_VERSION: '3.19.3'
   FLUTTER_CHANNEL: 'stable'
 
@@ -159,12 +158,6 @@ jobs:
       - name: Setup android tools (Android)
         if: steps.check_asset.outputs.skip_build != 'true' && matrix.config.target == 'android'
         uses: android-actions/setup-android@v3
-        with:
-          packages: |
-            platform-tools
-            platforms;android-33
-            build-tools;33.0.0
-            ndk;${{ env.NDK_VERSION }}
 
       - name: Set-Version (All)
         if: steps.check_asset.outputs.skip_build != 'true'
@@ -196,14 +189,12 @@ jobs:
       - name: Install rust target and build (Android)
         if: steps.check_asset.outputs.skip_build != 'true' && ( matrix.config.target == 'android') && ( matrix.config.arch == 'arm64')
         run: |
-          export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ env.NDK_VERSION }}
           rustup target install aarch64-linux-android
           flutter build apk --target-platform android-arm64
 
       - name: Install rust target and build (Android)
         if: steps.check_asset.outputs.skip_build != 'true' && ( matrix.config.target == 'android') && ( matrix.config.arch == 'arm')
         run: |
-          export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ env.NDK_VERSION }}
           rustup target install armv7-linux-androideabi
           flutter build apk --target-platform android-arm
           cd ..
